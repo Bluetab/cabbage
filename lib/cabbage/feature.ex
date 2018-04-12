@@ -165,8 +165,8 @@ defmodule Cabbage.Feature do
     scenarios = Module.get_attribute(env.module, :scenarios) || []
     steps = Module.get_attribute(env.module, :steps) || []
     tags = Module.get_attribute(env.module, :tags) || []
-
-    Enum.with_index(scenarios) |> Enum.map(fn {scenario, test_number} ->
+    functions =  generate_step_functions(steps, env.module)
+    tests = Enum.with_index(scenarios) |> Enum.map(fn {scenario, test_number} ->
       quote generated: true do
         describe "#{unquote test_number}. #{unquote scenario.name}" do
           @scenario unquote(Macro.escape(scenario))
@@ -189,14 +189,34 @@ defmodule Cabbage.Feature do
           def unquote(:"test #{test_number}. #{scenario.name} cabbage_test")(exunit_state) do
             Cabbage.Feature.Helpers.start_state(unquote(scenario.name), __MODULE__, exunit_state)
             Logger.info [IO.ANSI.color(61), "Line ", to_string(unquote(scenario.line)), ":  ", IO.ANSI.magenta, "Scenario: ", IO.ANSI.yellow, unquote(scenario.name)]
-            unquote Enum.map(scenario.steps, &compile_step(&1, steps, scenario.name))
+            unquote Enum.map(scenario.steps, &compile_step(&1, steps, scenario.name, env.module))
           end
         end
       end
     end)
+    [functions | tests ]
   end
 
-  def compile_step(step, steps, scenario_name) when is_list(steps) do
+  defp generate_step_functions(steps, module) do
+    Enum.with_index(steps)
+    |> Enum.filter(fn({{:{}, _, [_, _, _, _, metadata]}, _}) ->  metadata.module !== module end)
+    |> Enum.map(&generate_step_function(&1, module))
+  end
+
+  defp generate_step_function({step = {:{}, _, [regex, vars, state_pattern, block, metadata]}, step_number}, module ) do
+    step_functions = Module.get_attribute(module, :step_functions) || %{}
+    {_, [line: regex_line],_ }  = regex
+    function_name = :"step_#{step_number}_line_#{regex_line}"
+    Module.put_attribute(module, :step_functions, Map.put(step_functions, step, function_name))
+    quote generated: true do
+      @file unquote(metadata.file)
+      def unquote(:"#{function_name}") (unquote(vars),state = unquote(state_pattern) ) do
+        unquote(block)
+      end
+    end
+  end
+
+  def compile_step(step, steps, scenario_name, module) when is_list(steps) do
     step_type =
       step.__struct__
       |> Module.split()
@@ -204,16 +224,16 @@ defmodule Cabbage.Feature do
 
     step
     |> find_implementation_of_step(steps)
-    |> compile(step, step_type, scenario_name)
+    |> compile(step, step_type, scenario_name, module)
   end
 
-  defp compile({:{}, _, [regex, vars, state_pattern, block, metadata]}, step, step_type, scenario_name) do
+  defp compile({:{}, _, [regex, vars, state_pattern, block, metadata = %{module: module}]}, step, step_type, scenario_name, module)  do
     {regex, _} = Code.eval_quoted(regex)
     named_vars = extract_named_vars(regex, step.text) |> Map.merge(%{table: step.table_data, doc_string: step.doc_string})
     quote generated: true do
       with {_type, unquote(vars)} <- {:variables, unquote(Macro.escape(named_vars))},
            {_type, state = unquote(state_pattern)} <- {:state, Cabbage.Feature.Helpers.fetch_state(unquote(scenario_name), __MODULE__)}
-           do
+      do
         new_state = case unquote(block) do
                       {:ok, new_state} -> Map.merge(state, new_state)
                       _ -> state
@@ -231,7 +251,33 @@ defmodule Cabbage.Feature do
     end
   end
 
-  defp compile(_, step, step_type, _scenario_name) do
+  defp compile(step_data = {:{}, _, [regex, _vars, state_pattern, _block, metadata]}, step, step_type, scenario_name, module) do
+    {regex, _} = Code.eval_quoted(regex)
+    named_vars = extract_named_vars(regex, step.text) |> Map.merge(%{table: step.table_data, doc_string: step.doc_string})
+    function_name = Map.get(Module.get_attribute(module, :step_functions),step_data)
+    quote generated: true do
+      with {_type, variables} <- {:variables, unquote(Macro.escape(named_vars))},
+           {_type, state = unquote(state_pattern)} <- {:state, Cabbage.Feature.Helpers.fetch_state(unquote(scenario_name), __MODULE__)},
+           result <- unquote(function_name)(variables,state)
+      do
+        new_state =  case result do
+                       {:ok, new_state} -> Map.merge(state, new_state)
+                       _ -> state
+                     end
+        Cabbage.Feature.Helpers.update_state(unquote(scenario_name), __MODULE__, fn(_) -> new_state end)
+        Logger.info ["\t\t", IO.ANSI.cyan, unquote(step_type), " ", IO.ANSI.green, unquote(step.text)]
+      else
+        {type, state} ->
+          metadata = unquote(Macro.escape(metadata))
+          reraise """
+          ** (MatchError) Failure to match #{type} of #{inspect Cabbage.Feature.Helpers.remove_hidden_state(state)}
+          Pattern: #{unquote(Macro.to_string(state_pattern))}
+          """, Cabbage.Feature.Helpers.stacktrace(__MODULE__, metadata)
+      end
+    end
+  end
+
+  defp compile(_, step, step_type, _scenario_name,_module) do
     raise MissingStepError, [step_text: step.text, step_type: step_type]
   end
 
