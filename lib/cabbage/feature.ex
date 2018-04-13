@@ -143,6 +143,7 @@ defmodule Cabbage.Feature do
         quote do
           @feature File.read!("#{Cabbage.base_path}#{unquote(opts[:file])}") |> Gherkin.parse() |> Gherkin.flatten()
           @scenarios @feature.scenarios
+          @background_steps @feature.background_steps
         end
       end)
     end
@@ -163,6 +164,7 @@ defmodule Cabbage.Feature do
 
   defmacro __before_compile__(env) do
     scenarios = Module.get_attribute(env.module, :scenarios) || []
+    background_steps = Module.get_attribute(env.module, :background_steps) || []
     steps = Module.get_attribute(env.module, :steps) || []
     tags = Module.get_attribute(env.module, :tags) || []
     functions =  generate_step_functions(steps, env.module)
@@ -189,7 +191,7 @@ defmodule Cabbage.Feature do
           def unquote(:"test #{test_number}. #{scenario.name} cabbage_test")(exunit_state) do
             Cabbage.Feature.Helpers.start_state(unquote(scenario.name), __MODULE__, exunit_state)
             Logger.info [IO.ANSI.color(61), "Line ", to_string(unquote(scenario.line)), ":  ", IO.ANSI.magenta, "Scenario: ", IO.ANSI.yellow, unquote(scenario.name)]
-            unquote Enum.map(scenario.steps, &compile_step(&1, steps, scenario.name, env.module))
+            unquote Enum.map( background_steps ++ scenario.steps , &compile_step(&1, steps, scenario.name, env.module))
           end
         end
       end
@@ -257,8 +259,8 @@ defmodule Cabbage.Feature do
     function_name = Map.get(Module.get_attribute(module, :step_functions),step_data)
     quote generated: true do
       with {_type, variables} <- {:variables, unquote(Macro.escape(named_vars))},
-           {_type, state = unquote(state_pattern)} <- {:state, Cabbage.Feature.Helpers.fetch_state(unquote(scenario_name), __MODULE__)},
-           result <- unquote(function_name)(variables,state)
+           {_type, state} <- {:state, Cabbage.Feature.Helpers.fetch_state(unquote(scenario_name), __MODULE__)},
+           result = unquote(function_name)(variables,state)
       do
         new_state =  case result do
                        {:ok, new_state} -> Map.merge(state, new_state)
