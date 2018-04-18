@@ -21,4 +21,8 @@ defmodule Cabbage.BackgroundTest do
     assert coffees - served >= 0
     {:ok, %{coffees: coffees - served}}
   end
+
+  defgiven ~r/^the following data table$/, %{table: [%{id: "1", name: "Luke"}, %{id: "2", name: "Darth"}]}, _state do
+    :ok
+  end
 end

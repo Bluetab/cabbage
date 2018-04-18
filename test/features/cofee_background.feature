@@ -5,7 +5,11 @@ Feature: Serve coffee
 
   Background:
     Given there are 1 coffees left in the machine
-
+    And the following data table
+    | id  | name  |
+    | 1   | Luke  |
+    | 2   | Darth |
+    
   @last_chance @coffee
   Scenario: Buy last coffee
     And I have deposited $1
