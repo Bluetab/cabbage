@@ -173,7 +173,7 @@ defmodule Cabbage.Feature do
         describe "#{unquote test_number}. #{unquote scenario.name}" do
           @scenario unquote(Macro.escape(scenario))
           setup context do
-            for tag <- unquote(scenario.tags) do
+            for tag <- unquote(Enum.map(scenario.tags,&Atom.to_string/1)) do
               case Enum.find(unquote(Macro.escape(tags)), &(match?({^tag, _}, &1))) do
                 {^tag, block} ->
                   Logger.debug "Cabbage: Running tag @#{tag}..."
