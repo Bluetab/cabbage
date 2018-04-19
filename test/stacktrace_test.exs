@@ -10,7 +10,11 @@ defmodule Cabbage.StackTraceTest do
       import_steps(Cabbage.ImportFeatures)
     end
 
-    ExUnit.Server.cases_loaded()
+    case function_exported?(ExUnit.Server, :cases_loaded, 0) do
+        true -> ExUnit.Server.cases_loaded()
+        _ -> ExUnit.Server.modules_loaded()
+    end
+
 
     assert capture_io(fn ->
              assert ExUnit.run() == %{failures: 1, skipped: 0, total: 1}
