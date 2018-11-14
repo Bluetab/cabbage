@@ -17,7 +17,7 @@ defmodule Cabbage.StackTraceTest do
 
 
     assert capture_io(fn ->
-             assert ExUnit.run() == %{failures: 1, skipped: 0, total: 1}
+             assert ExUnit.run() == %{failures: 1, skipped: 0, total: 1, excluded: 0}
            end) =~ "test/support/import_features.ex:5"
   end
 end
