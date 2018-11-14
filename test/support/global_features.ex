@@ -20,4 +20,5 @@ defmodule Cabbage.GlobalFeatures do
   defand ~r/^I have deposited \$(?<money>\d+)$/, %{money: money}, %{coffees: _coffees, tagged: :data} do
     {:ok, %{deposited: String.to_integer(money)}}
   end
+
 end
