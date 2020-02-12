@@ -206,9 +206,9 @@ defmodule Cabbage.Feature do
     |> Enum.map(&generate_step_function(&1, module))
   end
 
-  defp generate_step_function({step = {:{}, _, [regex, vars, state_pattern, block, metadata]}, step_number}, module ) do
+  defp generate_step_function({step = {:{}, _, [regex, vars, state_pattern, block, metadata]}, step_number}, module) do
     step_functions = Module.get_attribute(module, :step_functions) || %{}
-    {_, [line: regex_line],_ }  = regex
+    regex_line = regex_line(regex)
     function_name = :"step_#{step_number}_line_#{regex_line}"
     Module.put_attribute(module, :step_functions, Map.put(step_functions, step, function_name))
     quote generated: true do
@@ -217,6 +217,10 @@ defmodule Cabbage.Feature do
         unquote(block)
       end
     end
+  end
+
+  defp regex_line({_, opts, _}) do
+    Keyword.get(opts, :line)
   end
 
   def compile_step(step, steps, scenario_name, module) when is_list(steps) do
@@ -314,7 +318,7 @@ defmodule Cabbage.Feature do
   """
   defmacro import_steps(module) do
     quote do
-      if Code.ensure_compiled?(unquote(module)) do
+      with {:module, _} <- Code.ensure_compiled(unquote(module)) do
         for step <- unquote(module).raw_steps() do
           Module.put_attribute(__MODULE__, :steps, step)
         end
@@ -327,7 +331,7 @@ defmodule Cabbage.Feature do
   """
   defmacro import_tags(module) do
     quote do
-      if Code.ensure_compiled?(unquote(module)) do
+      with {:module, _} <- Code.ensure_compiled(unquote(module)) do
         for {name, block} <- unquote(module).raw_tags() do
           Cabbage.Feature.Helpers.add_tag(__MODULE__, name, block)
         end
